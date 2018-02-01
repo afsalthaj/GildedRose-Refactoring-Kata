@@ -1,7 +1,7 @@
 package com.gildedrose
 
-import com.gildedrose.QualityAndSellInUpdate.{ Quality, SellIn }
 import Tagger._
+import com.gildedrose.Item.Type._
 
 class Item(val name: String, var sellIn: Int, var quality: Int) {
 
@@ -9,37 +9,50 @@ class Item(val name: String, var sellIn: Int, var quality: Int) {
 
 object Item {
 
+  type SellIn = SellIn.Type
+  object SellIn extends Tagger[Int]
+
+  type Quality = Quality.Type
+  object Quality extends Tagger[Int]
+
   type NumberOfDays = NumberOfDays.Type
   object NumberOfDays extends Tagger[Int]
 
+  sealed trait Type
+
   object Type {
+    case class Default() extends Type
+    case class AgedBrie() extends Type
+    case class Sulfuras() extends Type
+    case class Backstage() extends Type
 
-    sealed trait Default
-    sealed trait AgedBrie
-    sealed trait Sulfuras
-    sealed trait Backstage
-
-    def updateQualityAndSellIn(i: Item): Item = {
-      i.name match {
-        case "Aged Brie" =>
-          Item.from(i.name, QualityAndSellInUpdate[AgedBrie](SellIn(i.sellIn), Quality(i.quality)))
-        case "Sulfuras, Hand of Ragnaros" =>
-          Item.from(i.name, QualityAndSellInUpdate[Sulfuras](SellIn(i.sellIn), Quality(i.quality)))
-        case "Backstage passes to a TAFKAL80ETC concert" =>
-          Item.from(i.name, QualityAndSellInUpdate[Backstage](SellIn(i.sellIn), Quality(i.quality)))
-        case _ =>
-          Item.from(i.name, QualityAndSellInUpdate[Default](SellIn(i.sellIn), Quality(i.quality)))
-      }
+    def from(s: String): Type = s match {
+      case "Aged Brie" => AgedBrie()
+      case "Sulfuras, Hand of Ragnaros" => Sulfuras()
+      case "Backstage passes to a TAFKAL80ETC concert" => Backstage()
+      case _ => Default()
     }
   }
 
-  def from(name: String, sq: (SellIn, Quality)): Item =
-    new Item(name, sq._1.unwrap, sq._2.unwrap)
+  implicit class ItemOps(item: Item) {
+    def updateQualityAndSellIn: Item = {
+      def update[T <: Type: ProcessingBehaviour](item: Item): Item = {
+        val (newSellIn, newQuality) =
+          ProcessingBehaviour[T](SellIn(item.sellIn), Quality(item.quality))
 
-  implicit class ItemOps(a: Item) {
-    def updateQualityAndSellIn: Item = Type.updateQualityAndSellIn(a)
+        new Item(item.name, newSellIn, newQuality)
+      }
+
+      Type.from(item.name) match {
+        case AgedBrie() => update[AgedBrie](item)
+        case Sulfuras() => update[Sulfuras](item)
+        case Backstage() => update[Backstage](item)
+        case _ => update[Default](item)
+      }
+    }
+
     def afterNDays(n: NumberOfDays): Option[Item] =
-      unfold(a) { t =>
+      unfold(item) { t =>
         val item = t.updateQualityAndSellIn
         (item, item)
       }.take(n.unwrap).lift(n.unwrap)
